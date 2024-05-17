@@ -1,0 +1,69 @@
+name: Build and Release Kernel for Samsung Tab A7 GTA4L T505N
+
+on:
+  workflow_dispatch:
+
+jobs:
+  Kernel:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        shell: bash
+        working-directory: ${{ github.workspace }}
+
+    steps:
+      - name: Cleanup
+        run: rm -rf ${{ github.workspace }}/*
+
+      - name: Set-up environment
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential bc lld clang gcc-aarch64-linux-gnu gcc-arm-linux-gnueabi libssl-dev libelf-dev
+          sudo apt-get install -y curl git ftp lftp wget libarchive-tools ccache python2 python2-dev
+          sudo apt-get install -y zip unzip tar gzip bzip2 rar unrar cpio jq
+
+      - name: Clone kernel source for T505N
+        run: git clone https://github.com/YFMARCO/android_kernel_samsung_sm611599.git -b lineage-21 --depth=1 .
+
+      - name: Start Compilation
+        run: bash tools/build/build.sh
+
+      - name: Compile Kernel Image
+        run: |
+          make O=out ARCH=arm64 SUBARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu- CROSS_COMPILE_ARM32=arm-linux-gnueabi- Image.gz-dtb
+
+      - name: Create img file
+        run: |
+          mkdir -p out/img
+          cp out/arch/arm64/boot/Image.gz-dtb out/img/
+
+      - name: Set-up files
+        run: |
+          # Set-up files info
+          kernel_zip=$(ls out/arch/arm64/boot/Image.gz-dtb)
+          dtbo_img=$(ls out/arch/arm64/boot/dtbo.img)
+          echo "KERNEL_ZIP=$sparta_zip" >> $GITHUB_ENV
+          echo "DTBO_IMG=$dtbo_img" >> $GITHUB_ENV
+          echo "ZIP_NAME=kernel_${{ github.run_number }}_${{ github.sha }}" >> $GITHUB_ENV
+
+      - name: Upload img file
+        uses: actions/upload-artifact@v2
+        with:
+          name: kernel-img
+          path: out/img/
+
+      - name: Upload files to repository releases page
+        uses: softprops/action-gh-release@v1
+        with:
+          files: |
+            ${{ env.KERNEL_ZIP }}
+            ${{ env.DTBO_IMG }}
+          name: ${{ env.ZIP_NAME }}
+          tag_name: ${{ github.run_id }}
+          body: |
+            Kernel build for Samsung Tab A7 GTA4L T505N
+
+      - name: Save and Upload Build Log
+        run: |
+          bash tools/build/build.sh 2>&1 | tee log.txt
+          curl --upload-file log.txt https://transfer.adttemp.com.br/log.txt | cat -
